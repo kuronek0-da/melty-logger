@@ -1,100 +1,102 @@
-use std::{ffi::CString, mem, ptr, thread, time::Duration};
-use winapi::shared::minwindef::{DWORD, FALSE};
-use winapi::um::handleapi::{ CloseHandle, INVALID_HANDLE_VALUE };
-use winapi::um::memoryapi::ReadProcessMemory;
-use winapi::um::processthreadsapi::OpenProcess;
-use winapi::um::tlhelp32::*;
-use winapi::um::winnt::{HANDLE, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION};
+use windows::{
+    Win32::Foundation::{CloseHandle, HANDLE},
+    Win32::System::Diagnostics::Debug::ReadProcessMemory,
+    Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ},
+};
+use sysinfo::{Process, ProcessRefreshKind, RefreshKind, System, ProcessesToUpdate};
+use chrono::prelude::Local;
 
-const P1_WINS_ADDR: usize = 0x559550;
-const P2_WINS_ADDR: usize = 0x559580;
+mod character;
+mod gameaddr;
+use character::Character;
+use gameaddr::{GAME_MODE_ADDR, P1_CHARACTER_ADDR, P2_CHARACTER_ADDR, P1_MOON_SELECTOR_ADDR, P2_MOON_SELECTOR_ADDR, GameMode, Moon};
 
-unsafe fn get_process_id(process_name: &str) -> Option<DWORD> {
-    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if snapshot == INVALID_HANDLE_VALUE {
-        return None;
-    }
-
-    let mut entry: PROCESSENTRY32 = mem::zeroed();
-    entry.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
-
-    if Process32First(snapshot, &mut entry) == FALSE {
-        CloseHandle(snapshot);
-        return None;
-    }
-
-    loop {
-        let exe_name = CString::from_vec_unchecked(
-            entry.szExeFile
-                .iter()
-                .take_while(|&&c| c != 0)
-                .map(|&c| c as u8)
-                .collect(),
-        );
-
-        if exe_name.to_string_lossy().eq_ignore_ascii_case(process_name) {
-            CloseHandle(snapshot);
-            return Some(entry.th32ProcessID);
-        }
-
-        if Process32Next(snapshot, &mut entry) == FALSE {
-            break;
-        }
-    }
-
-    CloseHandle(snapshot);
-    None
-}
-
-unsafe fn read_u32(process: HANDLE, addr: usize) -> u32 {
-    let mut buffer: u32 = 0;
-    ReadProcessMemory(
-        process,
-        addr as _,
-        &mut buffer as *mut _ as _,
-        mem::size_of::<u32>(),
-        ptr::null_mut(),
-    );
-    buffer
-}
+use crate::gameaddr::GameState;
 
 fn main() {
+    let mut sys = System::new_with_specifics(
+    RefreshKind::nothing().with_processes(ProcessRefreshKind::everything())
+    );
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+
+    let pid: u32;
+    if let Some(p) = sys.processes_by_exact_name("MBAA.exe".as_ref()).next() {
+        pid = p.pid().as_u32();
+    } else {
+        println!("MBAA.exe not found.");
+        return;
+    }
+
     unsafe {
-        let process_name = "MBAA.exe"; // ajuste se necessário
 
-        let pid = match get_process_id(process_name) {
-            Some(id) => id,
-            None => {
-                println!("Processo não encontrado.");
-                return;
-            }
-        };
-
-        println!("PID encontrado: {}", pid);
-
-        let process = OpenProcess(
-            PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-            FALSE,
-            pid,
-        );
-
-        if process.is_null() {
-            println!("Falha ao abrir processo.");
-            return;
-        }
-
-        println!("Lendo memória...");
+        let process: HANDLE = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            false,
+            pid
+        ).expect("Failed to open process.");
+        println!("Found MBAA.exe \nWaiting to get in-game.");
 
         loop {
-            let p1 = read_u32(process, P1_WINS_ADDR);
-            let p2 = read_u32(process, P2_WINS_ADDR);
+            let local_time = Local::now();
+            println!("[{}]", local_time.format("%Y-%m-%d %H:%M:%S"));
 
-            println!("P1 Wins: {} | P2 Wins: {}", p1, p2);
+            unsafe {
+                if let Some(mode) = read_u32(process, GAME_MODE_ADDR) {
+                    match mode {
+                        1 => println!("GameMode: {:?}", GameState::InGame),
+                        5 => println!("GameMode: {:?}", GameState::Retry),
+                        20 => println!("GameMode: {:?}", GameState::CharSelect),
+                        _ => println!("GameMode: {}", mode)
+                    };
 
-            thread::sleep(Duration::from_millis(500));
+                    if let Some(c) = read_u32(process, P1_CHARACTER_ADDR) {
+                        let moon = get_moon(read_u32(process, P1_MOON_SELECTOR_ADDR));
+
+                        if let Some(chara) = Character::try_from(c).ok() {
+                            println!("P1 Char: {:?} {:?}", moon, chara);
+                        }
+                    }
+                    if let Some(c) = read_u32(process, P2_CHARACTER_ADDR) {
+                        let moon = get_moon(read_u32(process, P2_MOON_SELECTOR_ADDR));
+
+                        if let Some(chara) = Character::try_from(c).ok() {
+                            println!("P2 Char: {:?} {:?}", moon, chara);
+                        }
+                    }
+                }
+            }
+            println!("");
+            std::thread::sleep(std::time::Duration::from_millis(1000));
         }
 
-        // nunca chega aqui por causa do loop
-        // CloseHandle(process);
+        CloseHandle(process);
+    }
+}
+
+fn get_moon(value: Option<u32>) -> Moon {
+    match value {
+        Some(0) => Moon::Crescent,
+        Some(1) => Moon::Full,
+        Some(2) => Moon::Half,
+        _ => Moon::None
+    }
+}
+
+unsafe fn read_u32(process: HANDLE, address: usize) -> Option<u32> {
+    let mut buffer: u32 = 0;
+    let mut bytes_read: usize = 0;
+
+    let result = ReadProcessMemory(
+        process,
+        address as *const _,
+        &mut buffer as *mut _ as *mut _,
+        std::mem::size_of::<u32>(),
+        Some(&mut bytes_read)
+    );
+
+    if result.is_ok() && bytes_read == size_of::<u32>() {
+        Some(buffer)
+    } else {
+        None
     }
 }
