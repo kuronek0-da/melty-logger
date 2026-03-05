@@ -84,3 +84,12 @@ pub enum Character {
     Kohaku = 6,
     Nekomech = 34,
 }
+
+#[derive(Debug)]
+#[repr(u32)]
+pub enum Moon {
+    Crescent,
+    Full,
+    Half,
+    None
+}
