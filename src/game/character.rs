@@ -50,7 +50,7 @@ uint8_t charaToSelector ( uint8_t chara )
 
 use num_enum::TryFromPrimitive;
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Character {
     Aoko = 22,
@@ -62,6 +62,7 @@ pub enum Character {
     Ciel = 2,
     Sion = 0,
     Ries = 30,
+    VSion = 11,
     Wara = 9,
     Roa = 31,
     Maids = 4,
@@ -85,11 +86,10 @@ pub enum Character {
     Nekomech = 34,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, TryFromPrimitive)]
 #[repr(u32)]
 pub enum Moon {
     Crescent,
     Full,
-    Half,
-    None
+    Half
 }
