@@ -8,7 +8,7 @@ use windows::{
 
 use super::addresses::*;
 use super::reader::*;
-use crate::game::{character::{Character, Moon}, 
+use crate::game::{character::{GameChar, Moon}, 
     state::{self, GameState, GameTimers, Players}};
 use thiserror::Error;
 
@@ -162,7 +162,7 @@ impl MemoryManager {
     }
 
     fn get_player(&self, char_u32: u32, moon_u32: u32, score: u32) -> Result<state::Player, MemoryError> {
-        let char = Character::try_from(char_u32).map_err(|_| MemoryError::ParseFailed("character", char_u32))?;
+        let char = GameChar::try_from(char_u32).map_err(|_| MemoryError::ParseFailed("character", char_u32))?;
         let moon = Moon::try_from(moon_u32).map_err(|_| MemoryError::ParseFailed("moon", moon_u32))?;
         Ok(state::Player { char, moon, score })
     }

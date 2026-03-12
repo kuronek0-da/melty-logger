@@ -52,7 +52,7 @@ use num_enum::TryFromPrimitive;
 
 #[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
 #[repr(u32)]
-pub enum Character {
+pub enum GameChar {
     Aoko = 22,
     Tohno = 7,
     Hime = 51,

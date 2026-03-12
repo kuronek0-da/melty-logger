@@ -1,4 +1,4 @@
-use super::character::{Character, Moon};
+use super::character::{GameChar, Moon};
 use crate::memory::addresses::{ClientMode, GameMode, LocalPlayer};
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl Players {
 
 #[derive(Debug, Clone)]
 pub struct Player {
-    pub char: Character,
+    pub char: GameChar,
     pub score: u32,
     pub moon: Moon,
 }
