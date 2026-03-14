@@ -1,14 +1,16 @@
-use crate::{game::state::GameState, memory::addresses::{ClientMode, GameMode}, validation::result::{MatchResult, StateError}};
+use std::{ops::Deref, sync::{Arc, Mutex}};
+
+use crate::{client::state::ClientState, game::state::GameState, memory::addresses::{ClientMode, GameMode}, validation::result::{MatchResult, StateError}};
 
 pub struct Validator {
-    session_id: String,
+    client_state: Arc<Mutex<ClientState>>,
     matchstate: MatchState,
 }
 
 impl Validator {
-    pub fn new(session_id: String) -> Self {
+    pub fn new(client_state: Arc<Mutex<ClientState>>) -> Self {
         Validator {
-            session_id,
+            client_state,
             matchstate: MatchState::default(),
         }
     }
@@ -23,7 +25,15 @@ impl Validator {
                 self.update_matchstate(&game_mode);
                 match &self.matchstate {
                     MatchState::MatchFinished => {
-                        let result = MatchResult::new(players, timers, self.session_id.clone())?;
+                        let session_id = match self.client_state.lock() {
+                            Ok(state) => match state.get_session() {
+                                Some(session) => Ok(String::from(session)),
+                                None => Err(StateError::MatchResultError("could not get session id / code".to_string()))
+                            },
+                            Err(_) => Err(StateError::MatchResultError("could not get client state".to_string()))
+                        };
+
+                        let result = MatchResult::new(local_player as u8, players, timers, session_id?)?;
                         return Ok(Validity::MatchFinished(result));
                     },
                     MatchState::Invalid(reason) => Ok(Validity::Invalid(reason.clone())),

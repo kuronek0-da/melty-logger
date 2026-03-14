@@ -1,4 +1,5 @@
 use std::fmt;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use std::time::SystemTime;
 use crate::{game::state::{ GameTimers, Players }, memory::addresses::LocalPlayer};
@@ -16,9 +17,9 @@ pub enum Winner {
     Player2
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MatchResult {
-    winner: Winner,
+    sender_position: u8,
     players: Players,
     session_id: String,
     // Should be the same for both players unless desyncs occur
@@ -26,32 +27,29 @@ pub struct MatchResult {
     timestamp: u64 // unix timestamp
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MatchTimers {
     pub round_timer: u32,
     pub real_timer: u32
 }
 
 impl MatchResult {
-    pub fn new(players: Players, timers: GameTimers, session_id: String) -> Result<Self, StateError> {
+    pub fn new(sender_position: u8, players: Players, timers: GameTimers, session_id: String) -> Result<Self, StateError> {
         let p1 = &players.p1;
         let p2 = &players.p2;
         let timers: MatchTimers = MatchTimers {
             round_timer: timers.round_timer(),
             real_timer: timers.real_timer()
         };
-        let winner;
+        if sender_position != 1 && sender_position != 2 {
+            return Err(StateError::MatchResultError(format!("invalid player position: {}", sender_position)));
+        }
         
         // Max score = 3
         if p1.score + p2.score != 3 {
             return Err(StateError::MatchResultError("invalid match result".to_string()));
         }
-        if p1.score > p2.score {
-            winner = Winner::Player1;
-        } else {
-            winner = Winner::Player2;
-        }
-        return Ok(MatchResult { winner, players, session_id, timers, timestamp: get_unix_timestamp_u64() });
+        return Ok(MatchResult { sender_position, players, session_id, timers, timestamp: get_unix_timestamp_u64() });
     }
 }
 

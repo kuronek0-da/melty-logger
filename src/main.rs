@@ -1,8 +1,12 @@
 mod game;
 mod memory;
 mod validation;
+mod client;
+mod config;
 use std::array::repeat;
+use std::fmt::format;
 use std::io::{self, Write};
+use std::sync::Mutex;
 use std::{
     io::stdin,
     sync::{
@@ -14,58 +18,32 @@ use std::{
 
 use uuid::Uuid;
 
+use crate::client::ClientManager;
+use crate::client::state::ClientState;
+use crate::validation::result::MatchResult;
 use crate::{game::state::GameState, memory::addresses::GameMode};
 use crate::memory::manager::MemoryManager;
 use crate::validation::validator::{Validator, Validity};
 
 fn main() {
     println!("=== ATLAS OBSERVER ===\n");
-    let mut ranked_active = false;
 
-    let mut will_continue = true;
+    let client = ClientManager::new().unwrap();
+    let state = client.clone_state();
+    let (tx, rx) = channel();
 
-    input_thread(ranked_active);
+    *state.lock().unwrap() = if let Some(s) = host_or_join_input() {
+        s
+    } else {
+        println!("Exiting app...");
+        std::process::exit(1);
+    };
+    
+    let m = std::thread::spawn(move || memory_thread(tx));
+    let v = std::thread::spawn(move || validator_thread(rx, client));
 
-    while will_continue {
-        let (tx, rx) = channel();
-
-        let m = std::thread::spawn(move || memory_thread(tx));
-        let v = std::thread::spawn(move || validator_thread(rx));
-        
-        m.join();
-        v.join();
-
-        print!("Continue ranked? (y/n, default: y) > ");
-        std::io::stdout().flush().unwrap();
-        let mut input = String::new();
-        stdin().read_line(&mut input).unwrap();
-
-        match input.to_lowercase().trim() {
-            "n" => {
-                will_continue = false;
-            },
-            _ => {}
-        }
-    }
-}
-
-// TODO: control ranked mode
-fn input_thread(mut ranked_active: bool) {
-    println!("[RANKED MODE COMMANDS]");
-    println!("- 's' -> start\n");
-    // Ranked not started
-    if !ranked_active {
-        let mut input = String::new();
-        stdin().read_line(&mut input).unwrap();
-
-        match input.to_lowercase().trim() {
-            "s" => {
-                println!("\rRanking mode started.");
-                ranked_active = true;
-            },
-            _ => {}
-        }
-    }
+    m.join();
+    v.join();
 }
 
 fn memory_thread(tx: Sender<GameState>) {
@@ -112,8 +90,8 @@ fn memory_thread(tx: Sender<GameState>) {
     }
 }
 
-fn validator_thread(rx: Receiver<GameState>) {
-    let mut validator = Validator::new(Uuid::new_v4().to_string());
+fn validator_thread(rx: Receiver<GameState>, client: ClientManager) {
+    let mut validator = Validator::new(client.clone_state());
 
     for state in rx {
         match validator.validate(state) {
@@ -123,6 +101,7 @@ fn validator_thread(rx: Receiver<GameState>) {
                     break;
                 },
                 Validity::MatchFinished(result) => {
+                    client.send_result(&result);
                     update_status(format!("Finished = {:?}", result));
                 },
                 _ => {}
@@ -131,6 +110,32 @@ fn validator_thread(rx: Receiver<GameState>) {
                 update_status(format!("Validator error: {:?}", e));
                 break;
             }
+        }
+    }
+}
+
+fn host_or_join_input() -> Option<ClientState> {
+    println!("Commands: 'host' to generate a code, 'join <code>' to join, 'stop' to cancel");
+    loop {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        match input.trim() {
+            "host" => {
+                let host_state = ClientState::hosting();
+                if let Some(session) = host_state.get_session() {
+                    println!("Your code: {}", session);
+                }
+                break Some(host_state);
+            },
+            cmd if cmd.starts_with("join ") => {
+                let session = cmd[5..].trim().to_string();
+                println!("Joined ranked match with code: {}", session);
+                break Some(ClientState::JoinedRanked(session.clone()));
+            },
+            "stop" => {
+                break None;
+            }
+            _ => println!("Unknown command.")
         }
     }
 }

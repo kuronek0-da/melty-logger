@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use super::character::{GameChar, Moon};
 use crate::memory::addresses::{ClientMode, GameMode, LocalPlayer};
 
@@ -29,7 +31,7 @@ impl GameTimers {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Players {
     pub p1: Player,
     pub p2: Player,
@@ -41,7 +43,7 @@ impl Players {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub char: GameChar,
     pub score: u32,

@@ -49,8 +49,10 @@ uint8_t charaToSelector ( uint8_t chara )
 */
 
 use num_enum::TryFromPrimitive;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 #[repr(u32)]
 pub enum GameChar {
     Aoko = 22,
@@ -86,7 +88,8 @@ pub enum GameChar {
     Nekomech = 34,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, Clone, TryFromPrimitive, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 #[repr(u32)]
 pub enum Moon {
     Crescent,
